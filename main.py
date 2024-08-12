@@ -1,8 +1,12 @@
-from PySide6.QtWidgets import QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox
-from PySide6.QtGui import QFont, QAction
+from PySide6.QtWidgets import (QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox,
+                               QToolBar, QComboBox)
+from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument
+from PySide6.QtCore import Qt, QMimeData
 from PySide6 import QtWidgets
 import sys
 import os
+
+FONT_SIZES = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 36, 48, 64, 72, 96, 144, 288]
 
 
 class MainWindow(QMainWindow):
@@ -18,11 +22,15 @@ class MainWindow(QMainWindow):
         self.textarea = TextArea()
         self.setCentralWidget(self.textarea)
 
+        format_toolbar = FormatBar(self.textarea)
+        self.addToolBar(format_toolbar)
+
         self.create_menu_bar()
 
     def create_menu_bar(self):
         menu_bar = self.menuBar()
 
+        # FILE MENU
         file_menu = menu_bar.addMenu("File")
 
         open_action = QAction("Open", self)
@@ -37,6 +45,20 @@ class MainWindow(QMainWindow):
         save_action.triggered.connect(self.save_file)
         save_as_action.triggered.connect(self.save_as_file)
 
+        # EDIT MENU
+        edit_menu = menu_bar.addMenu("Edit")
+
+        undo_action = QAction("Undo", self)
+        undo_action.setShortcut("Ctrl+Z")
+        undo_action.triggered.connect(self.textarea.undo)
+
+        redo_action = QAction("Redo", self)
+        redo_action.setShortcut("Ctrl+Y")
+        redo_action.triggered.connect(self.textarea.redo)
+
+        edit_menu.addAction(undo_action)
+        edit_menu.addAction(redo_action)
+
     def open_file(self):
         downloads_folder = os.path.join(os.path.expanduser("~"), "Downloads")
 
@@ -47,7 +69,7 @@ class MainWindow(QMainWindow):
         if file_path:
             try:
                 with open(file_path, 'r') as file:
-                    self.textarea.setPlainText(file.read())
+                    self.textarea.setHtml(file.read())
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open file: {e}")
 
@@ -55,7 +77,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'current_file') and self.current_file:
             try:
                 with open(self.current_file, 'w') as file:
-                    file.write(self.textarea.toPlainText())
+                    file.write(self.textarea.toHtml())
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
         else:
@@ -71,10 +93,59 @@ class MainWindow(QMainWindow):
         if file_path:
             try:
                 with open(file_path, 'w') as file:
-                    file.write(self.textarea.toPlainText())
+                    file.write(self.textarea.toHtml())
                 self.current_file = file_path
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
+
+
+class FormatBar(QToolBar):
+    def __init__(self, textarea):
+        super().__init__()
+
+        bold_action = QAction(QIcon.fromTheme("format-text-bold"), "Bold", self)
+        bold_action.setCheckable(True)
+        bold_action.toggled.connect(lambda x: textarea.setFontWeight(QFont.Weight.Bold if x else QFont.Weight.Normal))
+        self.addAction(bold_action)
+
+        italic_action = QAction(QIcon.fromTheme("format-text-italic"), "Italic", self)
+        italic_action.setCheckable(True)
+        italic_action.toggled.connect(textarea.setFontItalic)
+        self.addAction(italic_action)
+
+        font_size = QComboBox()
+        font_size.addItems([str(s) for s in FONT_SIZES])
+        font_size.currentIndexChanged.connect(
+            lambda s: textarea.setFontPointSize(FONT_SIZES[s])
+        )
+        self.addWidget(font_size)
+
+        align_left_action = QAction(QIcon.fromTheme("format-justify-left"), "Align left", self)
+        align_left_action.setCheckable(True)
+        align_left_action.triggered.connect(
+            lambda: textarea.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        )
+        self.addAction(align_left_action)
+
+        align_center_action = QAction(QIcon.fromTheme("format-justify-center"), "Align center", self)
+        align_center_action.setCheckable(True)
+        align_center_action.triggered.connect(
+            lambda: textarea.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        )
+        self.addAction(align_center_action)
+
+        align_right_action = QAction(QIcon.fromTheme("format-justify-right"), "Align right", self)
+        align_right_action.setCheckable(True)
+        align_right_action.triggered.connect(
+            lambda: textarea.setAlignment(Qt.AlignmentFlag.AlignRight)
+        )
+        self.addAction(align_right_action)
+
+        alignment_group = QActionGroup(self)
+        alignment_group.setExclusive(True)
+        alignment_group.addAction(align_left_action)
+        alignment_group.addAction(align_center_action)
+        alignment_group.addAction(align_right_action)
 
 
 class TextArea(QTextEdit):
@@ -84,6 +155,14 @@ class TextArea(QTextEdit):
         font = QFont("Times New Roman", 12)
         self.setFont(font)
         self.document().setDefaultFont(font)
+
+    def insertFromMimeData(self, source: QMimeData):
+        if source.hasText():
+            cursor = self.textCursor()
+            text = source.text()
+            cursor.insertText(text, self.currentCharFormat())
+        else:
+            super().insertFromMimeData(source)
 
 
 if __name__ == "__main__":
