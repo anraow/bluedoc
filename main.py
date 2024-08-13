@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox,
                                QToolBar, QComboBox)
-from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument
-from PySide6.QtCore import Qt, QMimeData
+from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import Qt, QMimeData, QUrl, QRectF, QPointF
 from PySide6 import QtWidgets
 import sys
 import os
@@ -151,18 +151,53 @@ class FormatBar(QToolBar):
 class TextArea(QTextEdit):
     def __init__(self):
         super().__init__()
+        self.setAcceptDrops(True)
 
         font = QFont("Times New Roman", 12)
         self.setFont(font)
         self.document().setDefaultFont(font)
 
+        self.cursor = self.textCursor()
+
+        self.resizing_image = False
+        self.image_format = None
+        self.original_rect = QRectF()
+        self.start_pos = QPointF().toPoint()
+
+    def canInsertFromMimeData(self, source):
+        if source.hasImage():
+            return True
+        else:
+            return super(TextArea, self).canInsertFromMimeData(source)
+
     def insertFromMimeData(self, source: QMimeData):
         if source.hasText():
-            cursor = self.textCursor()
             text = source.text()
-            cursor.insertText(text, self.currentCharFormat())
+            self.cursor.insertText(text, self.currentCharFormat())
+        elif source.hasImage():
+            image = source.imageData()
+            document = self.document()
+            document.addResource(QTextDocument.ResourceType.ImageResource, QUrl("inserted_image"), image)
+            self.cursor.insertImage("inserted_image")
         else:
             super().insertFromMimeData(source)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasImage() or event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        mime_data = event.mimeData()
+
+        if mime_data.hasImage():
+            self.cursor.insertImage(mime_data.imageData())
+        elif mime_data.hasUrls():
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    image_path = url.toLocalFile()
+                    self.cursor.insertImage(image_path)
 
 
 if __name__ == "__main__":
