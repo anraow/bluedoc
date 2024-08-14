@@ -1,8 +1,8 @@
-from PySide6.QtWidgets import (QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox,
                                QToolBar, QComboBox)
-from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument, QDragEnterEvent, QDropEvent, QTextCursor
-from PySide6.QtCore import Qt, QMimeData, QUrl, QRectF, QPointF
-from PySide6 import QtWidgets
+from PySide6.QtGui import (QFont, QAction, QIcon, QActionGroup, QTextDocument, QDragEnterEvent, QDropEvent, QTextCursor,
+                           QDesktopServices)
+from PySide6.QtCore import Qt, QMimeData, QUrl, QPointF
 import sys
 import os
 
@@ -158,10 +158,12 @@ class TextArea(QTextEdit):
         self.document().setDefaultFont(font)
 
         self.cursor = self.textCursor()
+        self.setMouseTracking(True)
 
         self.resizing_image = False
         self.image_format = None
-        self.original_rect = QRectF()
+        self.original_width = None
+        self.original_height = None
         self.start_pos = QPointF().toPoint()
 
     def canInsertFromMimeData(self, source):
@@ -173,7 +175,10 @@ class TextArea(QTextEdit):
     def insertFromMimeData(self, source: QMimeData):
         if source.hasText():
             text = source.text()
-            self.cursor.insertText(text, self.currentCharFormat())
+            if QUrl(text).isValid() and text.startswith(("http://", "https://")):
+                self.cursor.insertHtml(f'<a href="{text}">{text}</a>')
+            else:
+                self.cursor.insertText(text, self.currentCharFormat())
         elif source.hasImage():
             image = source.imageData()
             document = self.document()
@@ -199,8 +204,9 @@ class TextArea(QTextEdit):
                     image_path = url.toLocalFile()
                     self.cursor.insertImage(image_path)
 
+    # CLICK-AND-DROP IMAGE RESIZE
     def mousePressEvent(self, event):
-        # Check if an image is clicked
+        # CHECK IF AN IMAGE IS CLICKED
         cursor = self.cursorForPosition(event.position().toPoint())
         self.image_format = cursor.charFormat().toImageFormat()
 
@@ -211,25 +217,34 @@ class TextArea(QTextEdit):
         self.resizing_image = True
         self.original_width = self.image_format.width()
         self.original_height = self.image_format.height()
-        self.start_pos = event.position()  # Use position() which returns QPointF
+        self.start_pos = event.position()
 
     def mouseMoveEvent(self, event):
         if self.resizing_image:
-            # Calculate the new size based on the mouse movement
-            delta = event.position() - self.start_pos  # Both are QPointF
+            # CALCULATE THE NEW SIZE BASED ON THE MOUSE MOVEMENT
+            delta = event.position() - self.start_pos
             new_width = max(1, self.original_width + delta.x())
             new_height = max(1, self.original_height + delta.y())
 
-            # Apply the new size
+            # APPLY THE NEW SIZE
             self.image_format.setWidth(new_width)
             self.image_format.setHeight(new_height)
 
-            # Update the cursor's char format with the resized image
+            # UPDATE THE CURSOR'S CHAR FORMAT WITH THE RESIZED IMAGE
             cursor = self.textCursor()
             cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
             cursor.setCharFormat(self.image_format)
+
         else:
             super().mouseMoveEvent(event)
+
+        # Change cursor when hovering over a link
+        anchor = self.anchorAt(event.position().toPoint())
+        if anchor:
+            self.viewport().setCursor(Qt.PointingHandCursor)
+        else:
+            self.viewport().setCursor(Qt.IBeamCursor)
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if self.resizing_image:
@@ -237,9 +252,17 @@ class TextArea(QTextEdit):
         else:
             super().mouseReleaseEvent(event)
 
+        anchor = self.anchorAt(event.position().toPoint())
+        if anchor:
+            # IF THERE'S AN ANCHOR, OPEN THE LINK IN THE DEFAULT WEB BROWSER
+            QDesktopServices.openUrl(QUrl(anchor))
+        else:
+            # IF NO LINK WAS CLICKED, CALL THE BASE CLASS IMPLEMENTATION
+            super().mouseReleaseEvent(event)
+
 
 if __name__ == "__main__":
-    app = QtWidgets.QApplication([])
+    app = QApplication([])
 
     widget = MainWindow()
     widget.resize(800, 600)
