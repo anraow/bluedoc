@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QMainWindow, QTextEdit, QStatusBar, QFileDialog, QMessageBox,
                                QToolBar, QComboBox)
-from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QFont, QAction, QIcon, QActionGroup, QTextDocument, QDragEnterEvent, QDropEvent, QTextCursor
 from PySide6.QtCore import Qt, QMimeData, QUrl, QRectF, QPointF
 from PySide6 import QtWidgets
 import sys
@@ -198,6 +198,44 @@ class TextArea(QTextEdit):
                 if url.isLocalFile():
                     image_path = url.toLocalFile()
                     self.cursor.insertImage(image_path)
+
+    def mousePressEvent(self, event):
+        # Check if an image is clicked
+        cursor = self.cursorForPosition(event.position().toPoint())
+        self.image_format = cursor.charFormat().toImageFormat()
+
+        if not self.image_format.isValid():
+            super().mousePressEvent(event)
+            return
+
+        self.resizing_image = True
+        self.original_width = self.image_format.width()
+        self.original_height = self.image_format.height()
+        self.start_pos = event.position()  # Use position() which returns QPointF
+
+    def mouseMoveEvent(self, event):
+        if self.resizing_image:
+            # Calculate the new size based on the mouse movement
+            delta = event.position() - self.start_pos  # Both are QPointF
+            new_width = max(1, self.original_width + delta.x())
+            new_height = max(1, self.original_height + delta.y())
+
+            # Apply the new size
+            self.image_format.setWidth(new_width)
+            self.image_format.setHeight(new_height)
+
+            # Update the cursor's char format with the resized image
+            cursor = self.textCursor()
+            cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
+            cursor.setCharFormat(self.image_format)
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.resizing_image:
+            self.resizing_image = False
+        else:
+            super().mouseReleaseEvent(event)
 
 
 if __name__ == "__main__":
